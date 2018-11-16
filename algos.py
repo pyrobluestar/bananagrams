@@ -86,7 +86,7 @@ class BFS(SearchAlgo):
             if word != '' and word != best:
                 bestscore = score
                 best = word
-                print('The new best word is: {}'.format(best))
+                #print('The new best word is: {}'.format(best))
 
             idx = len(soFar) - len(seed)
             if idx < len(tiles):

@@ -29,7 +29,7 @@ def makeBoard(max_size):
  */
 '''
 def setUpUtils(utils): # why is passed by reference here. Needs to understand this to know what name to put
-    print("Bananagrams")
+    #print("Bananagrams")
     # with open("Collins-Scrabble-Words-2015.txt") as word_file:
     #     valid_words = set(word_file.read().split())
     vocab = set()
@@ -67,8 +67,6 @@ def populateAnagramMap(eng_dict,utils):
  * string.
  */
 '''
-#TODO create an abstraction to choose scoring function depending on the algorithm
-
 def loadLetterScores(utils, scoring):
     with open("bananagram-tiles.txt") as f:
         for line in f.readlines():
@@ -83,13 +81,14 @@ def loadLetters():
         for line in f.readlines():
             ch,count = line.split(':')[0], int(line.split(':')[1])
             letters += ch*count
-    print("loaded letters are: {}".format(letters))
+    #print("loaded letters are: {}".format(letters))
     return letters
 
-'''
-Given a pile of tiles randomly select the number without replacement. Return the selected tiles
-'''
+
 def selectRandomTiles(pile, num):
+    '''
+    Given a pile of tiles randomly select the number without replacement. Return the selected tiles
+    '''
     hand = []
     for i in range(num):
         idx = random.randint(0,len(pile) - 1)
@@ -97,7 +96,7 @@ def selectRandomTiles(pile, num):
         del pile[idx]
         hand.append(tile)
 
-    return hand
+    return hand, pile
 
 
 ###############################################################################################
@@ -115,7 +114,7 @@ def countLetters(string):
     return count
 
 def orientWord(board, spot, word):
-    print(spot,word)
+    # print(spot,word)
     seed = board[spot.r][spot.c]
     idx = word.index(seed)
     if spot.dir == "left_right":
