@@ -49,17 +49,18 @@ def placeFirstWordOnBoard(board, first):
         col = middle + i
         board[middle][col] = first[i]
 
-def run_solver(algorithm):
+def run_solver(algorithm, begin=True):
 
     ## Initialize the algorithm object
     algo = algorithm(MAX_WORDS_PER_SPOT, Spot)
     setup.loadLetterScores(util, algo.getHeuristic)
+    if begin:
     #1. Play the first word
-    first = getFirstWord(algo, util, playertiles)
-    #print ("The first word is:",first)
-    placeFirstWordOnBoard(board,first)
-    setup.outputTrimmedBoard(board)
-    setup.removeTiles(playertiles,first)
+        first = getFirstWord(algo, util, playertiles)
+        #print ("The first word is:",first)
+        placeFirstWordOnBoard(board,first)
+        setup.outputTrimmedBoard(board)
+        setup.removeTiles(playertiles,first)
     #print ("remaining tiles : {}".format(playertiles))
 
     #2. Play remaining words
@@ -75,7 +76,7 @@ def run_solver(algorithm):
 if __name__ == '__main__':
 
     run_alg1 = False
-    n_runs = 10
+    n_runs = 10 # no of iterations
 
     # Initialize lists for completion metrics
     alg1_time = []
@@ -84,16 +85,17 @@ if __name__ == '__main__':
     alg2_complete = []
 
     # For MDP--initialize weights, rewards, and penalties
-    Q_opt = defaultdict(lambda: float(0))
-    reward_append = 4
-    pen_append = -1
-    reward_reconst = 1
-    pen_reconst = -1
+    Q_opt = defaultdict(float) # defaultdict(lambda: float(0))
+    completetion_reward = 100
+    time_penalty = 0.1 #weight for time penaly
     eta = 0.1
-
+    no_new_tiles = 1
+    policy = defaultdict(str)
+    candidates = []
     # Read in dictionary
     util = Util()
     loadedTiles = list(setUpUtils(util))
+    simulatation_tracker = defaultdict(int)
 
     for i in range(n_runs):
 
@@ -112,40 +114,50 @@ if __name__ == '__main__':
             else: alg1_complete.append(0)
             alg1_time.append(end - start)
 
-        start = time.time()
         board = setup.makeBoard(MAX_BOARD_SIZE)
         playertiles = randomtiles.copy()
+        start = time.time()
         (board, playertiles) = run_solver(algos.longest_word)
         end = time.time()
+        time_taken = end - start
         if playertiles == []: alg2_complete.append(1)
         else: alg2_complete.append(0)
-        alg2_time.append(end - start)
+        alg2_time.append(time_taken)
 
         # Set up MDP
         # Append new letter to hand
-        newtiles, remainingPile = setup.selectRandomTiles(remainingPile, 1)
+        newtiles, remainingPile = setup.selectRandomTiles(remainingPile, no_new_tiles)
         playertiles += newtiles
         MDP_state = ''.join(sorted(playertiles))
+        simulatation_tracker[MDP_state] = simulatation_tracker[MDP_state] + 1
         #print("new hand:", playertiles)
 
         # Option 1: find place on current board
         #input('Press enter to run Option 1: ')
-        (board, playertiles) = run_solver(algos.longest_word)
-        if playertiles == []: 
-            Q_opt[(MDP_state,'append')] = (1 - eta) * Q_opt[(MDP_state,'append')] + eta * reward_append
-        else: 
-            Q_opt[(MDP_state,'append')] = (1 - eta) * Q_opt[(MDP_state,'append')] + eta * pen_append
+        (board, playertiles) = run_solver(algos.longest_word,begin = False)
+        if playertiles == []:
+            utility = completetion_reward - time_penalty*time_taken
+            #Q_opt[(MDP_state,'append')] = (1 - eta) * Q_opt[(MDP_state,'append')] + eta * utility
+        else:
+            utility = 0
+            #Q_opt[(MDP_state,'append')] = (1 - eta) * Q_opt[(MDP_state,'append')] + eta * utility
+        Q_opt[(MDP_state, 'append')] = (1 - eta) * Q_opt[(MDP_state, 'append')] + eta * utility
 
         # Option 2: break down board and play from scratch
         #input('Press enter to run Option 2: ')
         playertiles = randomtiles.copy() + newtiles
         board = setup.makeBoard(MAX_BOARD_SIZE)
         (board, playertiles) = run_solver(algos.longest_word)
-        if playertiles == []: 
-            Q_opt[(MDP_state,'reconstruct')] = (1 - eta) * Q_opt[(MDP_state,'reconstruct')] + eta * reward_reconst
-        else: 
-            Q_opt[(MDP_state,'reconstruct')] = (1 - eta) * Q_opt[(MDP_state,'reconstruct')] + eta * pen_reconst
+        if playertiles == []:
+            utility = completetion_reward - time_penalty * time_taken
+            #Q_opt[(MDP_state,'reconstruct')] = (1 - eta) * Q_opt[(MDP_state,'reconstruct')] + eta * utility
+        else:
+            utility = 0
+        Q_opt[(MDP_state, 'reconstruct')] = (1 - eta) * Q_opt[(MDP_state, 'reconstruct')] + eta * utility
 
+
+    if Q_opt[(MDP_state, 'append')] >= Q_opt[(MDP_state, 'reconstruct')]: policy[MDP_state] = 'append'
+    else: policy[MDP_state] = 'reconstruct'
 
     if run_alg1:
         print("Alg1 runtime:", sum(alg1_time) / n_runs)
@@ -154,4 +166,6 @@ if __name__ == '__main__':
     print("Alg2 runtime:", sum(alg2_time) / n_runs)
     print("Alg2 complete:", sum(alg2_complete) / n_runs)
     print("Q_opt:", Q_opt)
+    print ("optimal policy for all states is {}".format(policy))
+    print("States explored and their frequency in simulaiton is : {}".format(simulatation_tracker))
 
