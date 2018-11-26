@@ -68,15 +68,15 @@ def run_solver(algorithm, begin=True):
         if algo.playWordOnBoard(util, playertiles, board) == "": break
     
     trimmedBoard = setup.outputTrimmedBoard(board)
-    #for row in trimmedBoard: print (*row)
-    #print ("remaining tiles : {}".format(playertiles))
+    for row in trimmedBoard: print (*row)
+    print ("remaining tiles : {}".format(playertiles))
 
     return (board, playertiles)
 
 if __name__ == '__main__':
 
     run_alg1 = False
-    n_runs = 10 # no of iterations
+    n_runs = 2 # no of iterations
 
     # Initialize lists for completion metrics
     alg1_time = []
@@ -85,20 +85,20 @@ if __name__ == '__main__':
     alg2_complete = []
 
     # For MDP--initialize weights, rewards, and penalties
-    Q_opt = defaultdict(float) # defaultdict(lambda: float(0))
+    Q_opt = defaultdict(lambda: defaultdict(float))
     completetion_reward = 100
-    time_penalty = 0.1 #weight for time penaly
-    eta = 0.1
+    time_penalty = 1 #weight for time penaly
+    eta = 1
     no_new_tiles = 1
     policy = defaultdict(str)
     candidates = []
     # Read in dictionary
     util = Util()
     loadedTiles = list(setUpUtils(util))
-    simulatation_tracker = defaultdict(int)
+    simulation_tracker = defaultdict(int)
 
     for i in range(n_runs):
-
+        print("runnning iteration : {}".format(i))
         allTiles = loadedTiles.copy()
         (randomtiles, remainingPile) = setup.selectRandomTiles(allTiles,NUM_START_TILES)
         #print('the original tiles are: {}'.format(randomtiles))
@@ -129,35 +129,41 @@ if __name__ == '__main__':
         newtiles, remainingPile = setup.selectRandomTiles(remainingPile, no_new_tiles)
         playertiles += newtiles
         MDP_state = ''.join(sorted(playertiles))
-        simulatation_tracker[MDP_state] = simulatation_tracker[MDP_state] + 1
+        simulation_tracker[MDP_state] = simulation_tracker[MDP_state] + 1
+        eta = 1/simulation_tracker[MDP_state]
         #print("new hand:", playertiles)
 
         # Option 1: find place on current board
         #input('Press enter to run Option 1: ')
+        s = time.time()
         (board, playertiles) = run_solver(algos.longest_word,begin = False)
+        e = time.time()
+        time_taken = e-s
+        print ("the time taken for the state {} for appending is: {}".format(MDP_state,time_taken))
         if playertiles == []:
             utility = completetion_reward - time_penalty*time_taken
-            #Q_opt[(MDP_state,'append')] = (1 - eta) * Q_opt[(MDP_state,'append')] + eta * utility
         else:
             utility = 0
-            #Q_opt[(MDP_state,'append')] = (1 - eta) * Q_opt[(MDP_state,'append')] + eta * utility
-        Q_opt[(MDP_state, 'append')] = (1 - eta) * Q_opt[(MDP_state, 'append')] + eta * utility
+        Q_opt[MDP_state]['append'] = (1 - eta) * Q_opt[MDP_state]['append'] + eta * utility
 
         # Option 2: break down board and play from scratch
         #input('Press enter to run Option 2: ')
         playertiles = randomtiles.copy() + newtiles
         board = setup.makeBoard(MAX_BOARD_SIZE)
+        s = time.time()
         (board, playertiles) = run_solver(algos.longest_word)
+        e = time.time()
+        time_taken = e - s
+        print ("the time taken for the state {} for reconstructing is: {}".format(MDP_state,time_taken))
         if playertiles == []:
             utility = completetion_reward - time_penalty * time_taken
-            #Q_opt[(MDP_state,'reconstruct')] = (1 - eta) * Q_opt[(MDP_state,'reconstruct')] + eta * utility
         else:
             utility = 0
-        Q_opt[(MDP_state, 'reconstruct')] = (1 - eta) * Q_opt[(MDP_state, 'reconstruct')] + eta * utility
+        Q_opt[MDP_state]['reconstruct'] = (1 - eta) * Q_opt[MDP_state]['reconstruct'] + eta * utility
 
-
-    if Q_opt[(MDP_state, 'append')] >= Q_opt[(MDP_state, 'reconstruct')]: policy[MDP_state] = 'append'
-    else: policy[MDP_state] = 'reconstruct'
+    for key in Q_opt:
+        if Q_opt[key]['append'] >= Q_opt[key]['reconstruct']: policy[key] = 'append'
+        else: policy[key] = 'reconstruct'
 
     if run_alg1:
         print("Alg1 runtime:", sum(alg1_time) / n_runs)
@@ -167,5 +173,5 @@ if __name__ == '__main__':
     print("Alg2 complete:", sum(alg2_complete) / n_runs)
     print("Q_opt:", Q_opt)
     print ("optimal policy for all states is {}".format(policy))
-    print("States explored and their frequency in simulaiton is : {}".format(simulatation_tracker))
+    print("States explored and their frequency in simulaiton is : {}".format(simulation_tracker))
 

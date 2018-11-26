@@ -196,7 +196,7 @@ class longest_word(SearchAlgo):
 
     def playWordOnBoard(self, util, tiles, board):
         playableSpots = self.getSpots(board, len(tiles))
-
+        word = ''
         for spot in playableSpots:
             seed = board[spot.r][spot.c]
             if seed != '' and seed != ' ':
