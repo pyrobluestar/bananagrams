@@ -6,6 +6,7 @@ import algos
 from setup import setUpUtils
 import setup
 import time
+import pickle
 
 ## Global variables
 # How many tiles each player draws at the start
@@ -49,7 +50,7 @@ def placeFirstWordOnBoard(board, first):
         col = middle + i
         board[middle][col] = first[i]
 
-def run_solver(algorithm, begin=True):
+def run_solver(algorithm, playertiles, begin=True):
 
     ## Initialize the algorithm object
     algo = algorithm(MAX_WORDS_PER_SPOT, Spot)
@@ -57,6 +58,7 @@ def run_solver(algorithm, begin=True):
     if begin:
     #1. Play the first word
         first = getFirstWord(algo, util, playertiles)
+        feature_vector['len_max_word'] = len(first)/NUM_START_TILES
         #print ("The first word is:",first)
         placeFirstWordOnBoard(board,first)
         setup.outputTrimmedBoard(board)
@@ -67,16 +69,59 @@ def run_solver(algorithm, begin=True):
     while True:
         if algo.playWordOnBoard(util, playertiles, board) == "": break
     
-    trimmedBoard = setup.outputTrimmedBoard(board)
-    for row in trimmedBoard: print (*row)
+    # trimmedBoard = setup.outputTrimmedBoard(board)
+    # for row in trimmedBoard: print (*row)
     print ("remaining tiles : {}".format(playertiles))
 
     return (board, playertiles)
 
+def getAction(weights, state):
+    score_append, score_reconstruct = 0, 0
+    for k,v in state.items():
+        score_append += v*weights['append'][k]
+        score_reconstruct += v * weights['reconstruct'][k]
+
+    if score_append >= score_reconstruct: return 'append'
+    else: return 'reconstruct'
+
+def testFunction():
+    def append():
+        s = time.time()
+        (board, playertiles) = run_solver(algos.longest_word, replay_tiles, begin=False)
+        e = time.time()
+        time_taken = e - s
+        if playertiles == []:
+            return completetion_reward - time_penalty * time_taken
+        else: return 0
+
+    def reconstruct():
+        recon_tiles = randomtiles.copy() + newtiles
+        s = time.time()
+        (board, playertiles) = run_solver(algos.longest_word,recon_tiles)
+        e = time.time()
+        time_taken = e - s
+        if playertiles == []:
+            return completetion_reward - time_penalty * time_taken
+        else: return 0
+    toss = random.random()
+    print ("random is : ",toss)
+    if  toss >= 0.5: random_r = append()
+    else: random_r = reconstruct()
+    if random_r !=0: print("completed in random policy")
+
+    # learnt policy
+    action =  getAction(learned_weights,feature_vector)
+    print("action by optimal policy is : " + action)
+    if action == 'append': policy = append()
+    else: policy = reconstruct()
+    if policy != 0: print("completed in learned policy")
+    return random_r, policy
+
 if __name__ == '__main__':
 
+    train = False
     run_alg1 = False
-    n_runs = 2 # no of iterations
+    n_runs = 100 # no of iterations
 
     # Initialize lists for completion metrics
     alg1_time = []
@@ -89,6 +134,7 @@ if __name__ == '__main__':
     completetion_reward = 100
     time_penalty = 1 #weight for time penaly
     eta = 1
+    epsilon = 0.1 # gradient decent parameter
     no_new_tiles = 1
     policy = defaultdict(str)
     candidates = []
@@ -96,82 +142,154 @@ if __name__ == '__main__':
     util = Util()
     loadedTiles = list(setUpUtils(util))
     simulation_tracker = defaultdict(int)
-
-    for i in range(n_runs):
-        print("runnning iteration : {}".format(i))
+    weights = {'append': defaultdict(float), 'reconstruct': defaultdict(float)}
+    saved_weights = []
+    # for testing
+    with open('saved_weights.pickle', 'rb') as f:
+        mynewlist = pickle.load(f)
+    learned_weights = mynewlist[-1]
+    random_reward = []
+    policy_reward = []
+    for i in range(50):
+        print ("Iteration no : ",i)
+        ## Solve step 1 first
+        feature_vector = {'no_vowels': 0, \
+                          'no_BCHMP': 0, \
+                          'no_DLN': 0, \
+                          'no_FGJK': 0, \
+                          'no_RSTN': 0, \
+                          'no_QVWXYZ': 0, \
+                          # features specific for board
+                          # no_words = 0
+                          'len_max_word': 0, \
+                          # features specific for new tiles
+                          'no_tiles_hand': 0,
+                          }
         allTiles = loadedTiles.copy()
-        (randomtiles, remainingPile) = setup.selectRandomTiles(allTiles,NUM_START_TILES)
-        #print('the original tiles are: {}'.format(randomtiles))
-        #input('Press enter to run: ')
-
-        if run_alg1:
-            start = time.time()
-            board = setup.makeBoard(MAX_BOARD_SIZE)
-            playertiles = randomtiles.copy()
-            board, playertiles = run_solver(algos.BFS)
-            end = time.time()
-            if playertiles == []: alg1_complete.append(1)
-            else: alg1_complete.append(0)
-            alg1_time.append(end - start)
-
+        (randomtiles, remainingPile) = setup.selectRandomTiles(allTiles, NUM_START_TILES)
         board = setup.makeBoard(MAX_BOARD_SIZE)
-        playertiles = randomtiles.copy()
+        begin_tiles = randomtiles.copy()
         start = time.time()
-        (board, playertiles) = run_solver(algos.longest_word)
+        (board, unplayed_tiles) = run_solver(algos.longest_word,begin_tiles)
         end = time.time()
         time_taken = end - start
-        if playertiles == []: alg2_complete.append(1)
+
+        if unplayed_tiles == []: alg2_complete.append(1)
         else: alg2_complete.append(0)
         alg2_time.append(time_taken)
 
+        # Start Step 2
         # Set up MDP
         # Append new letter to hand
+        ## making the new feature vector. Features selected are
+        for char in randomtiles:
+            if char in 'AEIOU': feature_vector['no_vowels'] += 1 / NUM_START_TILES
+            if char in 'BCHMP': feature_vector['no_BCHMP'] += 1 / NUM_START_TILES
+            if char in 'DLN': feature_vector['no_DLN'] += 1 / NUM_START_TILES
+            if char in 'FGJK': feature_vector['no_FGJK'] += 1 / NUM_START_TILES
+            if char in 'RSTN': feature_vector['no_RSTN'] += 1 / NUM_START_TILES
+            if char in 'QVWXYZ': feature_vector['no_QVWXYZ'] += 1 / NUM_START_TILES
         newtiles, remainingPile = setup.selectRandomTiles(remainingPile, no_new_tiles)
-        playertiles += newtiles
-        MDP_state = ''.join(sorted(playertiles))
-        simulation_tracker[MDP_state] = simulation_tracker[MDP_state] + 1
-        eta = 1/simulation_tracker[MDP_state]
+        replay_tiles = unplayed_tiles + newtiles #tiles after first peel call
+        feature_vector['no_tiles_hand'] = len(replay_tiles)/(len(replay_tiles) + len(randomtiles))
+        new_tiles = ''.join(sorted(replay_tiles))
+        feature_vector[''.join(sorted(replay_tiles))] = 1 # feature corresponding to tiles in hand
+        ##TODO for greater than 2 tiles drawn we would want to have similar to above feature vectors for new tiles
+        #MDP_state = ''.join(sorted(playertiles))
+        MDP_state = feature_vector
+
+        if True:
+            r_reward, p_reward = testFunction()
+            random_reward.append(r_reward)
+            policy_reward.append(p_reward)
+
+        if train:
+            print("runnning iteration : {}".format(i))
+            if (i)%50 == 0:
+                saved_weights.append(weights)
+                print("saved weights")
+                with open('saved_weights.pickle', 'wb') as handle:
+                    pickle.dump(saved_weights, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+            eta = 1 / (1 + simulation_tracker[new_tiles])
+            simulation_tracker[new_tiles] = simulation_tracker[new_tiles] + 1
+
+        #print('the original tiles are: {}'.format(randomtiles))
+        #input('Press enter to run: ')
         #print("new hand:", playertiles)
 
-        # Option 1: find place on current board
-        #input('Press enter to run Option 1: ')
-        s = time.time()
-        (board, playertiles) = run_solver(algos.longest_word,begin = False)
-        e = time.time()
-        time_taken = e-s
-        print ("the time taken for the state {} for appending is: {}".format(MDP_state,time_taken))
-        if playertiles == []:
-            utility = completetion_reward - time_penalty*time_taken
-        else:
-            utility = 0
-        Q_opt[MDP_state]['append'] = (1 - eta) * Q_opt[MDP_state]['append'] + eta * utility
+            # Option 1: find place on current board
+            #input('Press enter to run Option 1: ')
+            Q_hat = 0
+            for k,v in feature_vector.items():
+                Q_hat += v*weights['append'][k]
+            s = time.time()
+            (board, playertiles) = run_solver(algos.longest_word, begin = False)
+            e = time.time()
+            time_taken = e-s
+            print ("the time taken for the state {} for appending is: {}".format(MDP_state,time_taken))
+            if playertiles == []:
+                utility = completetion_reward - time_penalty*time_taken
+            else:
+                utility = 0
+            # Q_opt[MDP_state]['append'] = (1 - eta) * Q_opt[MDP_state]['append'] + eta * utility
+            for k,v in feature_vector.items():
+                if k != new_tiles:
+                    weights['append'][k] = weights['append'][k] - epsilon * (Q_hat - utility) * v
+                else: weights['append'][k] = weights['append'][k] - eta * (Q_hat - utility) * v/7
 
-        # Option 2: break down board and play from scratch
-        #input('Press enter to run Option 2: ')
-        playertiles = randomtiles.copy() + newtiles
-        board = setup.makeBoard(MAX_BOARD_SIZE)
-        s = time.time()
-        (board, playertiles) = run_solver(algos.longest_word)
-        e = time.time()
-        time_taken = e - s
-        print ("the time taken for the state {} for reconstructing is: {}".format(MDP_state,time_taken))
-        if playertiles == []:
-            utility = completetion_reward - time_penalty * time_taken
-        else:
-            utility = 0
-        Q_opt[MDP_state]['reconstruct'] = (1 - eta) * Q_opt[MDP_state]['reconstruct'] + eta * utility
+            # Option 2: Break down the board and Reconstruct the whole board
+            #input('Press enter to run Option 2: ')
+            Q_hat = 0
+            for k,v in feature_vector.items():
+                Q_hat += v*weights['reconstruct'][k]
+            playertiles = randomtiles.copy() + newtiles
+            board = setup.makeBoard(MAX_BOARD_SIZE)
+            s = time.time()
+            (board, playertiles) = run_solver(algos.longest_word)
+            e = time.time()
+            time_taken = e - s
+            print ("the time taken for the state {} for reconstructing is: {}".format(MDP_state,time_taken))
+            if playertiles == []:
+                utility = completetion_reward - time_penalty * time_taken
+            else:
+                utility = 0
+            # Q_opt[MDP_state]['reconstruct'] = (1 - eta) * Q_opt[MDP_state]['reconstruct'] + eta * utility
+            for k, v in feature_vector.items():
+                if k != new_tiles:
+                    weights['reconstruct'][k] = weights['reconstruct'][k] - epsilon * (Q_hat - utility) * v
+                else: weights['reconstruct'][k] = weights['reconstruct'][k] - eta * (Q_hat - utility) * v/7
+            #7 here is number of features. normalizing in some sense so that the estimate doesn't blow up
 
-    for key in Q_opt:
-        if Q_opt[key]['append'] >= Q_opt[key]['reconstruct']: policy[key] = 'append'
-        else: policy[key] = 'reconstruct'
+    print ("policy reward is {}".format(policy_reward))
+    print ("random reward is {}".format(random_reward))
 
-    if run_alg1:
-        print("Alg1 runtime:", sum(alg1_time) / n_runs)
-        print("Alg1 complete:", sum(alg1_complete) / n_runs)
 
-    print("Alg2 runtime:", sum(alg2_time) / n_runs)
-    print("Alg2 complete:", sum(alg2_complete) / n_runs)
-    print("Q_opt:", Q_opt)
-    print ("optimal policy for all states is {}".format(policy))
-    print("States explored and their frequency in simulaiton is : {}".format(simulation_tracker))
+
+
+# if run_alg1:
+#     start = time.time()
+#     board = setup.makeBoard(MAX_BOARD_SIZE)
+#     playertiles = randomtiles.copy()
+#     board, playertiles = run_solver(algos.BFS)
+#     end = time.time()
+#     if playertiles == []:
+#         alg1_complete.append(1)
+#     else:
+#         alg1_complete.append(0)
+#     alg1_time.append(end - start)
+#
+#  for key in Q_opt:
+# #     if Q_opt[key]['append'] >= Q_opt[key]['reconstruct']: policy[key] = 'append'
+# #     else: policy[key] = 'reconstruct'
+#
+# if run_alg1:
+#     print("Alg1 runtime:", sum(alg1_time) / n_runs)
+#     print("Alg1 complete:", sum(alg1_complete) / n_runs)
+#
+# print("Alg2 runtime:", sum(alg2_time) / n_runs)
+# print("Alg2 complete:", float(sum(alg2_complete) / n_runs))
+# print("Q_opt:", Q_opt)
+# print ("optimal policy for all states is {}".format(policy))
+# print("States explored and their frequency in simulaiton is : {}".format(simulation_tracker))
 
