@@ -10,7 +10,7 @@ import pickle
 
 ## Global variables
 # How many tiles each player draws at the start
-NUM_START_TILES = 21
+NUM_START_TILES = 23
 # How big to make the virtual grid that I populate
 MAX_BOARD_SIZE = NUM_START_TILES * 2
 # Bananagrams is a complex game. Limit how deep we go
@@ -56,7 +56,7 @@ def run_solver(algorithm, playertiles, begin=True):
     algo = algorithm(MAX_WORDS_PER_SPOT, Spot)
     setup.loadLetterScores(util, algo.getHeuristic)
     if begin:
-    #1. Play the first word
+    #1. Play the first word, starting with no words on the board
         first = getFirstWord(algo, util, playertiles)
         feature_vector['len_max_word'] = len(first)/NUM_START_TILES
         #print ("The first word is:",first)
@@ -66,12 +66,13 @@ def run_solver(algorithm, playertiles, begin=True):
     #print ("remaining tiles : {}".format(playertiles))
 
     #2. Play remaining words
+    # The algorithm is deferred to the algorithm class in algos.py file.
     while True:
         if algo.playWordOnBoard(util, playertiles, board) == "": break
     
     # trimmedBoard = setup.outputTrimmedBoard(board)
     # for row in trimmedBoard: print (*row)
-    print ("remaining tiles : {}".format(playertiles))
+    #print ("remaining tiles : {}".format(playertiles))
 
     return (board, playertiles)
 
@@ -85,7 +86,16 @@ def getAction(weights, state):
     else: return 'reconstruct'
 
 def testFunction():
+    '''
+    Function to run during the test time to evaluate the performance of the weights learned by Q-learning during the
+    training phase.
+    :return:
+    '''
     def append():
+        '''
+        For the test function, try to append the tiles in hand on the existing crossword
+        :return:
+        '''
         s = time.time()
         (board, playertiles) = run_solver(algos.longest_word, replay_tiles, begin=False)
         e = time.time()
@@ -95,6 +105,11 @@ def testFunction():
         else: return 0
 
     def reconstruct():
+        '''
+        For the test function reconstruct the entire crossword, given the additional set of tiles.
+        :return:
+        '''
+        #print ("indes {}, length of the list {}".format(i,len(random_tracker)))
         recon_tiles = randomtiles.copy() + newtiles
         s = time.time()
         (board, playertiles) = run_solver(algos.longest_word,recon_tiles)
@@ -107,14 +122,18 @@ def testFunction():
     print ("random is : ",toss)
     if  toss >= 0.5: random_r = append()
     else: random_r = reconstruct()
-    if random_r !=0: print("completed in random policy")
+    if random_r !=0:
+        random_tracker[i] = 1
+        print("completed in random policy")
 
     # learnt policy
     action =  getAction(learned_weights,feature_vector)
     print("action by optimal policy is : " + action)
     if action == 'append': policy = append()
     else: policy = reconstruct()
-    if policy != 0: print("completed in learned policy")
+    if policy != 0:
+        policy_tracker[i] = 1
+        print("completed in learned policy")
     return random_r, policy
 
 if __name__ == '__main__':
@@ -145,12 +164,14 @@ if __name__ == '__main__':
     weights = {'append': defaultdict(float), 'reconstruct': defaultdict(float)}
     saved_weights = []
     # for testing
-    with open('saved_weights.pickle', 'rb') as f:
+    policy_tracker = [0]*100
+    random_tracker = [0]*100
+    with open('saved_weights_1000_iter.pickle', 'rb') as f:
         mynewlist = pickle.load(f)
     learned_weights = mynewlist[-1]
     random_reward = []
     policy_reward = []
-    for i in range(50):
+    for i in range(100):
         print ("Iteration no : ",i)
         ## Solve step 1 first
         feature_vector = {'no_vowels': 0, \
@@ -191,14 +212,14 @@ if __name__ == '__main__':
             if char in 'QVWXYZ': feature_vector['no_QVWXYZ'] += 1 / NUM_START_TILES
         newtiles, remainingPile = setup.selectRandomTiles(remainingPile, no_new_tiles)
         replay_tiles = unplayed_tiles + newtiles #tiles after first peel call
-        feature_vector['no_tiles_hand'] = len(replay_tiles)/(len(replay_tiles) + len(randomtiles))
+        feature_vector['no_tiles_hand'] = 3*len(replay_tiles)/(len(replay_tiles) + len(randomtiles))
         new_tiles = ''.join(sorted(replay_tiles))
         feature_vector[''.join(sorted(replay_tiles))] = 1 # feature corresponding to tiles in hand
         ##TODO for greater than 2 tiles drawn we would want to have similar to above feature vectors for new tiles
         #MDP_state = ''.join(sorted(playertiles))
         MDP_state = feature_vector
 
-        if True:
+        if 1==0:
             r_reward, p_reward = testFunction()
             random_reward.append(r_reward)
             policy_reward.append(p_reward)
@@ -208,7 +229,7 @@ if __name__ == '__main__':
             if (i)%50 == 0:
                 saved_weights.append(weights)
                 print("saved weights")
-                with open('saved_weights.pickle', 'wb') as handle:
+                with open('saved_weights_1000_iter.pickle', 'wb') as handle:
                     pickle.dump(saved_weights, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
             eta = 1 / (1 + simulation_tracker[new_tiles])
@@ -224,19 +245,20 @@ if __name__ == '__main__':
             for k,v in feature_vector.items():
                 Q_hat += v*weights['append'][k]
             s = time.time()
-            (board, playertiles) = run_solver(algos.longest_word, begin = False)
+            (board, playertiles) = run_solver(algos.longest_word, replay_tiles,begin = False)
             e = time.time()
             time_taken = e-s
-            print ("the time taken for the state {} for appending is: {}".format(MDP_state,time_taken))
+            print ("Remaining tiles after appending is {}".format(playertiles))
+            print ("the time taken for state {} for \n appending is: {}".format(MDP_state,time_taken))
             if playertiles == []:
                 utility = completetion_reward - time_penalty*time_taken
             else:
                 utility = 0
             # Q_opt[MDP_state]['append'] = (1 - eta) * Q_opt[MDP_state]['append'] + eta * utility
             for k,v in feature_vector.items():
-                if k != new_tiles:
-                    weights['append'][k] = weights['append'][k] - epsilon * (Q_hat - utility) * v
-                else: weights['append'][k] = weights['append'][k] - eta * (Q_hat - utility) * v/7
+                #if k != replay_tiles:
+                weights['append'][k] = weights['append'][k] - epsilon * (Q_hat - utility) * v
+                #else: weights['append'][k] = weights['append'][k] - eta * (Q_hat - utility) * v/7
 
             # Option 2: Break down the board and Reconstruct the whole board
             #input('Press enter to run Option 2: ')
@@ -246,19 +268,20 @@ if __name__ == '__main__':
             playertiles = randomtiles.copy() + newtiles
             board = setup.makeBoard(MAX_BOARD_SIZE)
             s = time.time()
-            (board, playertiles) = run_solver(algos.longest_word)
+            (board, playertiles) = run_solver(algos.longest_word,playertiles)
             e = time.time()
             time_taken = e - s
-            print ("the time taken for the state {} for reconstructing is: {}".format(MDP_state,time_taken))
+            print ("Remaining tiles after reconstructing is {}".format(playertiles))
+            print ("the time taken for state {} for \n reconstructing is: {}".format(MDP_state,time_taken))
             if playertiles == []:
                 utility = completetion_reward - time_penalty * time_taken
             else:
                 utility = 0
             # Q_opt[MDP_state]['reconstruct'] = (1 - eta) * Q_opt[MDP_state]['reconstruct'] + eta * utility
             for k, v in feature_vector.items():
-                if k != new_tiles:
-                    weights['reconstruct'][k] = weights['reconstruct'][k] - epsilon * (Q_hat - utility) * v
-                else: weights['reconstruct'][k] = weights['reconstruct'][k] - eta * (Q_hat - utility) * v/7
+                #if k != replay_tiles:
+                weights['reconstruct'][k] = weights['reconstruct'][k] - epsilon * (Q_hat - utility) * v
+                #else: weights['reconstruct'][k] = weights['reconstruct'][k] - eta * (Q_hat - utility) * v/7
             #7 here is number of features. normalizing in some sense so that the estimate doesn't blow up
 
     print ("policy reward is {}".format(policy_reward))
