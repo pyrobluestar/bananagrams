@@ -139,6 +139,7 @@ def testFunction():
 if __name__ == '__main__':
 
     train = False
+    test = True
     run_alg1 = False
     n_runs = 100 # no of iterations
 
@@ -219,13 +220,12 @@ if __name__ == '__main__':
         #MDP_state = ''.join(sorted(playertiles))
         MDP_state = feature_vector
 
-        if 1==0:
+        if test:
             r_reward, p_reward = testFunction()
             random_reward.append(r_reward)
             policy_reward.append(p_reward)
 
         if train:
-            print("runnning iteration : {}".format(i))
             if (i)%50 == 0:
                 saved_weights.append(weights)
                 print("saved weights")
@@ -236,8 +236,8 @@ if __name__ == '__main__':
             simulation_tracker[new_tiles] = simulation_tracker[new_tiles] + 1
 
         #print('the original tiles are: {}'.format(randomtiles))
-        #input('Press enter to run: ')
-        #print("new hand:", playertiles)
+            input('Press enter to run: ')
+            print("new hand:", playertiles)
 
             # Option 1: find place on current board
             #input('Press enter to run Option 1: ')
@@ -261,7 +261,7 @@ if __name__ == '__main__':
                 #else: weights['append'][k] = weights['append'][k] - eta * (Q_hat - utility) * v/7
 
             # Option 2: Break down the board and Reconstruct the whole board
-            #input('Press enter to run Option 2: ')
+            input('Press enter to run Option 2: ')
             Q_hat = 0
             for k,v in feature_vector.items():
                 Q_hat += v*weights['reconstruct'][k]
